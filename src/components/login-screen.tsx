@@ -97,7 +97,7 @@ export function LoginScreen() {
               key="code"
               autoFocus
               name="one-time-code"
-              type="text"
+              type="tel"
               inputMode="numeric"
               autoComplete="one-time-code"
               enterKeyHint="done"

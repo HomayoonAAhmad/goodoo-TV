@@ -80,7 +80,7 @@ export function HomeScreen({ name, avatar }: { name: string; avatar: string }) {
 
         <Button
           variant="filled"
-          className="min-h-12 w-full rounded-2xl font-semibold mt-4"
+          className="w-full rounded-2xl font-semibold mt-4"
           disabled={busy}
           onClick={createRoom}
         >

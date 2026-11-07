@@ -9,6 +9,7 @@ export function ThemeToggle() {
   useEffect(() => {
     const saved = localStorage.getItem("goodoo-theme") === "dark";
     document.documentElement.classList.toggle("dark", saved);
+    document.documentElement.dataset.theme = saved ? "dark" : "light";
     document.documentElement.classList.toggle("solid-glass", localStorage.getItem("goodoo-solid") === "true");
     setDark(saved);
   }, []);
@@ -21,6 +22,7 @@ export function ThemeToggle() {
         const next = !dark;
         setDark(next);
         document.documentElement.classList.toggle("dark", next);
+        document.documentElement.dataset.theme = next ? "dark" : "light";
         localStorage.setItem("goodoo-theme", next ? "dark" : "light");
       }}
     />

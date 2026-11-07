@@ -17,7 +17,6 @@ import { Button } from "glisse";
 import { getSocket } from "@/lib/socket";
 import { getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
-import { AppDock } from "./app-dock";
 
 type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number };
 type RoomData = {
@@ -142,38 +141,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
             />
           </div>
         </div>
-        <section className="mt-6 overflow-hidden rounded-3xl bg-white dark:bg-[#1c1c1e]">
-          <div className="flex items-center justify-between gap-3 px-5 py-4">
-            <div className="min-w-0">
-              <p className="text-xs text-[#8e8e93]">کد دعوت</p>
-              <strong dir="ltr" className="mt-1 block font-mono text-base tracking-widest">
-                {roomId}
-              </strong>
-            </div>
-            <Button
-              variant="glass"
-              onClick={copyInvite}
-              className="flex shrink-0 items-center gap-2 text-[#007aff] dark:text-[#0a84ff]"
-            >
-              {copied ? <Check size={17} /> : <Copy size={17} />}
-              {copied ? "کپی شد" : "دعوت"}
-            </Button>
-          </div>
-          <div className="mx-5 border-t border-black/10 dark:border-white/10" />
-          <div className="flex items-center gap-3 px-5 py-4">
-            <Users size={18} className="text-[#007aff] dark:text-[#0a84ff]" />
-            <span className="flex-1 text-sm">افراد حاضر</span>
-            <span className="text-sm text-[#8e8e93]">{room.members.length} نفر</span>
-          </div>
-          <div className="mx-5 border-t border-black/10 dark:border-white/10" />
-          <div className="flex min-w-0 items-center gap-3 px-5 py-4">
-            <Link2 size={18} className="shrink-0 text-[#007aff] dark:text-[#0a84ff]" />
-            <span className="shrink-0 text-sm">ویدیو</span>
-            <span dir="ltr" className="min-w-0 flex-1 truncate text-left text-xs text-[#8e8e93]">
-              {room.source}
-            </span>
-          </div>
-        </section>
+        <RoomInfoCard roomId={roomId} source={room.source} memberCount={room.members.length} copied={copied} onInvite={copyInvite} />
         {!room.isHost && (
           <p className="mt-4 text-center text-xs text-[#8e8e93]">برای شروع، یک بار روی پخش بزن.</p>
         )}
@@ -185,9 +153,18 @@ export function RoomScreen({ roomId }: { roomId: string }) {
           خروج از اتاق
         </Button>
       </section>
-      {/* <AppDock active="home" /> */}
     </main>
   );
+}
+
+function RoomInfoCard({ roomId, source, memberCount, copied, onInvite }: { roomId: string; source: string; memberCount: number; copied: boolean; onInvite: () => void }) {
+  return <section className="mt-6 overflow-hidden rounded-3xl bg-white dark:bg-[#1c1c1e]">
+    <div className="flex items-center justify-between gap-3 px-5 py-4"><div className="min-w-0"><p className="text-xs text-[#8e8e93]">کد دعوت</p><strong dir="ltr" className="mt-1 block font-mono text-base tracking-widest">{roomId}</strong></div><Button variant="glass" onClick={onInvite} className="flex shrink-0 items-center gap-2 text-[#007aff] dark:text-[#0a84ff]">{copied ? <Check size={17} /> : <Copy size={17} />}{copied ? "کپی شد" : "دعوت"}</Button></div>
+    <div className="mx-5 border-t border-black/10 dark:border-white/10" />
+    <div className="flex items-center gap-3 px-5 py-4"><Users size={18} className="text-[#007aff] dark:text-[#0a84ff]" /><span className="flex-1 text-sm">افراد حاضر</span><span className="text-sm text-[#8e8e93]">{memberCount} نفر</span></div>
+    <div className="mx-5 border-t border-black/10 dark:border-white/10" />
+    <div className="flex min-w-0 items-center gap-3 px-5 py-4"><Link2 size={18} className="shrink-0 text-[#007aff] dark:text-[#0a84ff]" /><span className="shrink-0 text-sm">ویدیو</span><span dir="ltr" className="min-w-0 flex-1 truncate text-left text-xs text-[#8e8e93]">{source}</span></div>
+  </section>;
 }
 
 function MediaPlayer({
@@ -307,18 +284,7 @@ function DirectPlayer({
     const video = videoRef.current;
     if (!video || applyingRemote.current) return;
     if (isHost) emitPlayback(playing, video.currentTime);
-    else {
-      applyingRemote.current = true;
-      const target =
-        playback.currentTime +
-        (playback.isPlaying ? Math.max(0, (Date.now() - playback.updatedAt) / 1000) : 0);
-      video.currentTime = target;
-      if (playback.isPlaying) video.play().catch(() => {});
-      else video.pause();
-      window.setTimeout(() => {
-        applyingRemote.current = false;
-      }, 250);
-    }
+    else if (!playing) emitPlayback(false, video.currentTime);
   };
 
   return (
@@ -327,7 +293,7 @@ function DirectPlayer({
         className="size-full bg-black object-contain"
         ref={videoRef}
         src={isHlsUrl(source) ? undefined : source}
-        controls={isHost}
+        controls
         playsInline
         preload="metadata"
         onPlay={() => onChange(true)}
@@ -408,8 +374,8 @@ function YoutubePlayer({
                 isPlaying: event.data === 1,
                 currentTime: current,
               });
-            else if (!isHost && [0, 1, 2].includes(event.data))
-              applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote);
+            else if (!isHost && event.data === 2)
+              socket.emit("playback:update", { roomId, isPlaying: false, currentTime: current });
           },
         },
       }) as PlayerApi;

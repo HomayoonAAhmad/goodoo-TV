@@ -99,12 +99,12 @@ app.prepare().then(() => {
       if (!socket.rooms.has(code)) return;
       try {
         const room = await prisma.room.findUnique({ where: { code } });
-        if (!room || room.hostId !== socket.data.user.id) return;
+        if (!room || (room.hostId !== socket.data.user.id && isPlaying !== false)) return;
         const updated = await prisma.room.update({
           where: { code },
-          data: { isPlaying: Boolean(isPlaying), currentTime },
+          data: { isPlaying: Boolean(isPlaying), currentTime: room.hostId === socket.data.user.id ? currentTime : room.currentTime },
         });
-        socket.to(code).emit("playback:update", {
+        (room.hostId === socket.data.user.id ? socket.to(code) : io.to(code)).emit("playback:update", {
           isPlaying: updated.isPlaying,
           currentTime: updated.currentTime,
           updatedAt: updated.updatedAt.getTime(),
