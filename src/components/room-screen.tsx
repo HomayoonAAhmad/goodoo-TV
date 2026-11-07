@@ -1,11 +1,12 @@
 "use client";
 
+import { BrandLogo } from "./brand-logo";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Check,
-  Clapperboard,
   Copy,
   Link2,
   LoaderCircle,
@@ -121,7 +122,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
           onClick={() => router.push("/")}
         />
         <span className="flex items-center gap-2 text-sm font-bold">
-          <Clapperboard size={19} /> Goodoo TV
+          <BrandLogo size={19} /> Goodoo TV
         </span>
         <ThemeToggle />
       </header>

@@ -1,8 +1,10 @@
 "use client";
 
+import { BrandLogo } from "./brand-logo";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clapperboard, Smartphone } from "lucide-react";
+import { ArrowRight, Smartphone } from "lucide-react";
 import { Button, Input } from "glisse";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -52,7 +54,7 @@ export function LoginScreen() {
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col px-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(20px,env(safe-area-inset-top))] sm:px-8">
       <header className="flex items-center justify-between">
         <span className="flex items-center gap-2 font-bold">
-          <Clapperboard size={21} /> Goodoo TV
+          <BrandLogo size={21} /> Goodoo TV
         </span>
         <ThemeToggle />
       </header>

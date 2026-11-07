@@ -1,6 +1,8 @@
 "use client";
+
+import { BrandLogo } from "./brand-logo";
 import Link from "next/link";
-import { Clapperboard, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { TabBar } from "glisse";
 export function AppDock({ active, avatar }: { active: "home" | "profile"; avatar?: string }) {
   return (
@@ -17,7 +19,7 @@ export function AppDock({ active, avatar }: { active: "home" | "profile"; avatar
           {
             value: "home",
             label: "خانه",
-            icon: <Clapperboard size={21} />,
+            icon: <BrandLogo size={21} />,
             href: "/",
           },
           {

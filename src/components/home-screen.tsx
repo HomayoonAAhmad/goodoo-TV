@@ -1,9 +1,11 @@
 "use client";
 
+import { BrandLogo } from "./brand-logo";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CirclePlay, Clapperboard, Link2, LogIn, UserRound, Users } from "lucide-react";
+import { ArrowLeft, CirclePlay, Link2, LogIn, UserRound, Users } from "lucide-react";
 import { Button, Input } from "glisse";
 import { getSocket } from "@/lib/socket";
 import { ThemeToggle } from "./theme-toggle";
@@ -38,10 +40,12 @@ export function HomeScreen({ name, avatar }: { name: string; avatar: string }) {
     <main className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-5 sm:px-8">
       <header className="flex items-center justify-between pb-5">
         <Link href="/" className="flex items-center gap-2 font-extrabold">
-          <span className="grid size-9 place-items-center rounded-xl bg-stone-900 text-white dark:bg-white dark:text-stone-900">
-            <Clapperboard size={19} />
-          </span>{" "}
-          Goodoo TV
+          {/* <span className="grid size-9 place-items-center rounded-xl bg-stone-900 text-white dark:bg-white dark:text-stone-900"> */}
+          {/* <BrandLogo size={19} /> */}
+          <BrandLogo size={30} />
+          {/* </span>{" "} */}
+          {/* Goodoo TV */}
+          <span className="mt-2">Goodoo TV</span>
         </Link>
         <div className="flex items-center gap-2">
           <ThemeToggle />

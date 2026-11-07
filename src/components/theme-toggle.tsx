@@ -13,6 +13,9 @@ export function ThemeToggle() {
     document.documentElement.classList.toggle("solid-glass", localStorage.getItem("goodoo-solid") === "true");
     setDark(saved);
   }, []);
+  useEffect(() => {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+  }, [dark]);
   return (
     <Button
       variant="glass"
