@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+
+# Build / generated
+.nuxt
+.output
+.nitro
+.cache
+dist
+coverage
+
+# Lockfiles
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+pnpm-lock.yml
+
+# Logs & env
+*.log
+.env
+.env.*
+
+# Editor / agent tooling
+.mimocode
+.kilo
+.vscode
+
+# Minified / vendored
+*.min.*
+public/vendor

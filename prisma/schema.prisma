@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String?   @unique
+  phone     String?   @unique
+  name      String?
+  firstName String?
+  lastName  String?
+  username  String?   @unique
+  avatar    String?   @db.Text
+  createdAt DateTime  @default(now())
+  sessions  Session[]
+  rooms     Room[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  source      String
+  hostId      String
+  host        User     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  isPlaying   Boolean  @default(false)
+  currentTime Float    @default(0)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
