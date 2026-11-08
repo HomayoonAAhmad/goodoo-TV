@@ -10,6 +10,27 @@ const hostname = process.env.HOSTNAME || "0.0.0.0";
 const app = next({ dev: process.env.NODE_ENV !== "production", hostname, port });
 // shortcut: presence lives in one Node process, add a Socket.IO adapter before scaling horizontally.
 const presence = new Map();
+const roomQueues = new Map();
+
+function withRoomLock(code, task) {
+  const previous = roomQueues.get(code) || Promise.resolve();
+  const current = previous.catch(() => {}).then(task);
+  roomQueues.set(code, current);
+  return current.finally(() => {
+    if (roomQueues.get(code) === current) roomQueues.delete(code);
+  });
+}
+
+async function removeMember(io, code, socketId) {
+  const members = presence.get(code);
+  if (!members || !members.delete(socketId)) return;
+  if (members.size) {
+    io.to(code).emit("room:members", [...members.values()]);
+    return;
+  }
+  presence.delete(code);
+  await prisma.room.deleteMany({ where: { code } });
+}
 
 function validSource(value) {
   try {
@@ -20,7 +41,9 @@ function validSource(value) {
   }
 }
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  // Presence is process-local, so stored rooms are empty after a server restart.
+  await prisma.room.deleteMany().catch((error) => console.error("Could not clean up empty rooms", error));
   const httpServer = createServer((req, res) => app.getRequestHandler()(req, res));
   const io = new Server(httpServer);
 
@@ -60,30 +83,32 @@ app.prepare().then(() => {
     });
 
     socket.on("room:join", async ({ roomId }, done) => {
+      const code = String(roomId || "")
+        .trim()
+        .toUpperCase();
       try {
-        const code = String(roomId || "")
-          .trim()
-          .toUpperCase();
-        const room = await prisma.room.findUnique({ where: { code }, include: { host: true } });
-        if (!room) return done({ error: "اتاقی با این کد پیدا نشد." });
-        socket.join(code);
-        const members = presence.get(code) || new Map();
-        members.set(socket.id, {
-          name: socket.data.user.firstName || socket.data.user.name || socket.data.user.username || "مهمان",
-          avatar: socket.data.user.avatar,
-        });
-        presence.set(code, members);
-        io.to(code).emit("room:members", [...members.values()]);
-        const currentTime =
-          room.currentTime +
-          (room.isPlaying ? Math.max(0, (Date.now() - room.updatedAt.getTime()) / 1000) : 0);
-        done({
-          roomId: code,
-          source: room.source,
-          hostName: room.host.firstName || room.host.name || room.host.username || "میزبان",
-          isHost: room.hostId === socket.data.user.id,
-          members: [...members.values()],
-          playback: { isPlaying: room.isPlaying, currentTime, updatedAt: Date.now() },
+        await withRoomLock(code, async () => {
+          const room = await prisma.room.findUnique({ where: { code }, include: { host: true } });
+          if (!room) return done({ error: "اتاقی با این کد پیدا نشد." });
+          socket.join(code);
+          const members = presence.get(code) || new Map();
+          members.set(socket.id, {
+            name: socket.data.user.firstName || socket.data.user.name || socket.data.user.username || "مهمان",
+            avatar: socket.data.user.avatar,
+          });
+          presence.set(code, members);
+          io.to(code).emit("room:members", [...members.values()]);
+          const currentTime =
+            room.currentTime +
+            (room.isPlaying ? Math.max(0, (Date.now() - room.updatedAt.getTime()) / 1000) : 0);
+          done({
+            roomId: code,
+            source: room.source,
+            hostName: room.host.firstName || room.host.name || room.host.username || "میزبان",
+            isHost: room.hostId === socket.data.user.id,
+            members: [...members.values()],
+            playback: { isPlaying: room.isPlaying, currentTime, updatedAt: Date.now() },
+          });
         });
       } catch {
         done({ error: "ورود به اتاق ممکن نشد." });
@@ -113,19 +138,20 @@ app.prepare().then(() => {
 
     socket.on("room:leave", ({ roomId }) => {
       const code = String(roomId || "").toUpperCase();
-      socket.leave(code);
-      const members = presence.get(code);
-      if (!members) return;
-      members.delete(socket.id);
-      io.to(code).emit("room:members", [...members.values()]);
-      if (!members.size) presence.delete(code);
+      withRoomLock(code, async () => {
+        socket.leave(code);
+        await removeMember(io, code, socket.id);
+      }).catch((error) => console.error("Could not leave room", error));
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       for (const [code, members] of presence) {
-        if (!members.delete(socket.id)) continue;
-        io.to(code).emit("room:members", [...members.values()]);
-        if (!members.size) presence.delete(code);
+        if (!members.has(socket.id)) continue;
+        try {
+          await withRoomLock(code, () => removeMember(io, code, socket.id));
+        } catch (error) {
+          console.error("Could not clean up room presence", error);
+        }
       }
     });
   });

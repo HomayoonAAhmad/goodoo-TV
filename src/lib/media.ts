@@ -16,3 +16,19 @@ export function getYoutubeId(input: string) {
 export function isHlsUrl(url: string) {
   return /\.m3u8(?:$|\?)/i.test(url);
 }
+
+export function getPlayableSource(input: string) {
+  try {
+    const url = new URL(input);
+    const provider =
+      url.hostname === "fj-ios.com" ||
+      url.hostname === "tdmm2.ir" ||
+      url.hostname.endsWith(".tdmm2.ir");
+    const filename = `${url.pathname}?${url.searchParams.get("f") || ""}`;
+    return provider && /\.mkv(?:$|[?&])/i.test(filename)
+      ? `/api/media?url=${encodeURIComponent(input)}`
+      : input;
+  } catch {
+    return input;
+  }
+}

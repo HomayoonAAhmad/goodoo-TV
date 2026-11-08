@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "glisse";
 import { getSocket } from "@/lib/socket";
-import { getYoutubeId, isHlsUrl } from "@/lib/media";
+import { getPlayableSource, getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
 
 type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number };
@@ -192,6 +192,7 @@ function MediaPlayer({
   socket: SocketLike;
 }) {
   const youtubeId = getYoutubeId(source);
+  const playableSource = getPlayableSource(source);
   const [failed, setFailed] = useState(false);
   if (youtubeId)
     return (
@@ -206,8 +207,8 @@ function MediaPlayer({
     );
   return (
     <DirectPlayer
-      key={source}
-      source={source}
+      key={playableSource}
+      source={playableSource}
       isHost={isHost}
       playback={playback}
       roomId={roomId}
