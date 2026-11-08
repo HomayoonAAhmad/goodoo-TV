@@ -1,17 +1,22 @@
 "use client";
 
-import { BrandLogo } from "./brand-logo";
 import Link from "next/link";
-import { UserRound } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { House, UserRound } from "lucide-react";
 import { TabBar } from "glisse";
 export function AppDock({ active, avatar }: { active: "home" | "profile"; avatar?: string }) {
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(
     <nav
       dir="ltr"
       aria-label="ناوبری"
-      className="fixed inset-x-0 bottom-0 z-50 mx-auto w-fit pb-[max(14px,env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center pb-[max(14px,env(safe-area-inset-bottom))]"
     >
       <TabBar
+        className="pointer-events-auto"
         dir="ltr"
         value={active}
         link={Link}
@@ -19,7 +24,7 @@ export function AppDock({ active, avatar }: { active: "home" | "profile"; avatar
           {
             value: "home",
             label: "خانه",
-            icon: <BrandLogo size={21} />,
+            icon: <House size={21} />,
             href: "/",
           },
           {
@@ -34,6 +39,7 @@ export function AppDock({ active, avatar }: { active: "home" | "profile"; avatar
           },
         ]}
       />
-    </nav>
+    </nav>,
+    document.body,
   );
 }

@@ -68,13 +68,10 @@ app.prepare().then(() => {
         if (!room) return done({ error: "اتاقی با این کد پیدا نشد." });
         socket.join(code);
         const members = presence.get(code) || new Map();
-        members.set(
-          socket.id,
-          socket.data.user.firstName ||
-            socket.data.user.name ||
-            socket.data.user.username ||
-            "مهمان",
-        );
+        members.set(socket.id, {
+          name: socket.data.user.firstName || socket.data.user.name || socket.data.user.username || "مهمان",
+          avatar: socket.data.user.avatar,
+        });
         presence.set(code, members);
         io.to(code).emit("room:members", [...members.values()]);
         const currentTime =

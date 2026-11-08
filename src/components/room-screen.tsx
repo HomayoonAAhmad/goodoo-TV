@@ -1,13 +1,10 @@
 "use client";
 
-import { BrandLogo } from "./brand-logo";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Check,
-  Copy,
+  House,
   Link2,
   LoaderCircle,
   Play,
@@ -20,12 +17,13 @@ import { getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
 
 type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number };
+type Member = { name: string; avatar: string | null };
 type RoomData = {
   roomId: string;
   source: string;
   hostName: string;
   isHost: boolean;
-  members: string[];
+  members: Member[];
   playback: Playback;
 };
 type PlayerApi = {
@@ -43,7 +41,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
   const [socket, setSocket] = useState<SocketLike | null>(null);
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     setSocket(getSocket());
@@ -51,7 +49,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     if (!socket) return;
-    const onMembers = (members: string[]) =>
+    const onMembers = (members: Member[]) =>
       setRoom((current) => (current ? { ...current, members } : current));
     const onPlayback = (playback: Playback) =>
       setRoom((current) =>
@@ -76,10 +74,18 @@ export function RoomScreen({ roomId }: { roomId: string }) {
     };
   }, [roomId, socket]);
 
-  const copyInvite = useCallback(async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+  const shareInvite = useCallback(async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: "دعوت به اتاق تماشا", url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setSharing(true);
+        window.setTimeout(() => setSharing(false), 1800);
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") console.error("Could not share invite", error);
+    }
   }, []);
 
   if (!socket)
@@ -122,7 +128,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
           onClick={() => router.push("/")}
         />
         <span className="flex items-center gap-2 text-sm font-bold">
-          <BrandLogo size={19} /> Goodoo TV
+          <House size={19} /> Goodoo TV
         </span>
         <ThemeToggle />
       </header>
@@ -142,7 +148,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
             />
           </div>
         </div>
-        <RoomInfoCard roomId={roomId} source={room.source} memberCount={room.members.length} copied={copied} onInvite={copyInvite} />
+        <RoomInfoCard roomId={roomId} source={room.source} members={room.members} sharing={sharing} onInvite={shareInvite} />
         {!room.isHost && (
           <p className="mt-4 text-center text-xs text-[#8e8e93]">برای شروع، یک بار روی پخش بزن.</p>
         )}
@@ -158,14 +164,18 @@ export function RoomScreen({ roomId }: { roomId: string }) {
   );
 }
 
-function RoomInfoCard({ roomId, source, memberCount, copied, onInvite }: { roomId: string; source: string; memberCount: number; copied: boolean; onInvite: () => void }) {
+function RoomInfoCard({ roomId, source, members, sharing, onInvite }: { roomId: string; source: string; members: Member[]; sharing: boolean; onInvite: () => void }) {
   return <section className="mt-6 overflow-hidden rounded-3xl bg-white dark:bg-[#1c1c1e]">
-    <div className="flex items-center justify-between gap-3 px-5 py-4"><div className="min-w-0"><p className="text-xs text-[#8e8e93]">کد دعوت</p><strong dir="ltr" className="mt-1 block font-mono text-base tracking-widest">{roomId}</strong></div><Button variant="glass" onClick={onInvite} className="flex shrink-0 items-center gap-2 text-[#007aff] dark:text-[#0a84ff]">{copied ? <Check size={17} /> : <Copy size={17} />}{copied ? "کپی شد" : "دعوت"}</Button></div>
+    <div className="flex items-center justify-between gap-3 px-5 py-4"><div className="min-w-0"><p className="text-xs text-[#8e8e93]">کد دعوت</p><strong dir="ltr" className="mt-1 block font-mono text-base tracking-widest">{roomId}</strong></div><Button variant="glass" onClick={onInvite} className="flex shrink-0 items-center gap-2 text-[#007aff] dark:text-[#0a84ff]"><ShareIcon size={17} />{sharing ? "کپی شد" : "اشتراک‌گذاری"}</Button></div>
     <div className="mx-5 border-t border-black/10 dark:border-white/10" />
-    <div className="flex items-center gap-3 px-5 py-4"><Users size={18} className="text-[#007aff] dark:text-[#0a84ff]" /><span className="flex-1 text-sm">افراد حاضر</span><span className="text-sm text-[#8e8e93]">{memberCount} نفر</span></div>
+    <details className="group"><summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4"><Users size={18} className="text-[#007aff] dark:text-[#0a84ff]" /><span className="flex-1 text-sm">افراد حاضر</span><span className="text-sm text-[#8e8e93]">{members.length} نفر</span></summary><div className="space-y-3 px-5 pb-4">{members.map((member, index) => <div key={`${member.name}-${index}`} className="flex items-center gap-3 text-sm"><div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">{member.avatar ? <img src={member.avatar} alt="" className="size-full object-cover" /> : <Users size={16} />}</div><span>{member.name}</span></div>)}</div></details>
     <div className="mx-5 border-t border-black/10 dark:border-white/10" />
     <div className="flex min-w-0 items-center gap-3 px-5 py-4"><Link2 size={18} className="shrink-0 text-[#007aff] dark:text-[#0a84ff]" /><span className="shrink-0 text-sm">ویدیو</span><span dir="ltr" className="min-w-0 flex-1 truncate text-left text-xs text-[#8e8e93]">{source}</span></div>
   </section>;
+}
+
+function ShareIcon({ size = 18 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>;
 }
 
 function MediaPlayer({
@@ -351,6 +361,7 @@ function YoutubePlayer({
 }) {
   const playerRef = useRef<PlayerApi | null>(null);
   const applyingRemote = useRef(false);
+  const applyVersion = useRef(0);
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
 
@@ -365,7 +376,7 @@ function YoutubePlayer({
         playerVars: { playsinline: 1, controls: 1, rel: 0 },
         events: {
           onReady: () =>
-            applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote),
+            applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote, applyVersion),
           onStateChange: (event: { data: number }) => {
             if (applyingRemote.current || !playerRef.current) return;
             const current = playerRef.current.getCurrentTime();
@@ -405,7 +416,7 @@ function YoutubePlayer({
   }, [id, isHost, roomId, socket]);
 
   useEffect(() => {
-    applyYoutubePlayback(playerRef.current, playback, applyingRemote);
+    applyYoutubePlayback(playerRef.current, playback, applyingRemote, applyVersion);
   }, [playback]);
   useEffect(() => {
     if (!isHost) return;
@@ -431,8 +442,10 @@ function applyYoutubePlayback(
   player: PlayerApi | null,
   playback: Playback,
   applyingRemote: { current: boolean },
+  applyVersion: { current: number },
 ) {
   if (!player) return;
+  const version = ++applyVersion.current;
   applyingRemote.current = true;
   const target =
     playback.currentTime +
@@ -443,7 +456,7 @@ function applyYoutubePlayback(
     else player.pauseVideo();
   } catch {}
   window.setTimeout(() => {
-    applyingRemote.current = false;
+    if (version === applyVersion.current) applyingRemote.current = false;
   }, 300);
 }
 
