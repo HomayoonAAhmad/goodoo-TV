@@ -110,6 +110,8 @@ async function start(job: Job, input: string) {
       "10",
       "-hls_list_size",
       "0",
+      "-hls_playlist_type",
+      "event",
       "-hls_flags",
       "independent_segments+temp_file",
       "-hls_segment_filename",

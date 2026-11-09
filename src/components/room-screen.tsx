@@ -303,7 +303,7 @@ function DirectPlayer({
         return;
       }
       if (Hls.isSupported()) {
-        hls = new Hls();
+        hls = new Hls({ startPosition: 0 });
         hls.loadSource(source);
         hls.attachMedia(video);
         hls.on(Hls.Events.ERROR, (_event, data) => {
