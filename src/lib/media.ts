@@ -25,7 +25,8 @@ export function getPlayableSource(input: string) {
       url.hostname === "tdmm2.ir" ||
       url.hostname.endsWith(".tdmm2.ir");
     const filename = `${url.pathname}?${url.searchParams.get("f") || ""}`;
-    return provider && /\.mkv(?:$|[?&])/i.test(filename)
+    return (provider && /\.mkv(?:$|[?&])/i.test(filename)) ||
+      (url.hostname === "main-dl.fastserver29venom64.fun" && url.pathname.startsWith("/m/"))
       ? `/api/media/transcode/index.m3u8?url=${encodeURIComponent(input)}`
       : input;
   } catch {

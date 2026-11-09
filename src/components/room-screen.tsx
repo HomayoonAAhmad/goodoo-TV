@@ -17,7 +17,7 @@ import { getSocket } from "@/lib/socket";
 import { getPlayableSource, getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
 
-type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number };
+type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number; controllerId?: string };
 type TranscodeStatus = { ready: boolean; finished: boolean; error: boolean; percent: number | null; etaSeconds: number | null };
 type Member = { name: string; avatar: string | null };
 type RoomData = {
@@ -283,6 +283,8 @@ function DirectPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const applyingRemote = useRef(false);
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
   const lastSent = useRef(0);
   const [needsGesture, setNeedsGesture] = useState(false);
   const emitPlayback = useCallback(
@@ -320,6 +322,7 @@ function DirectPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    if (playback.controllerId && playback.controllerId === socket.id) return;
     applyingRemote.current = true;
     const target =
       playback.currentTime +
@@ -335,11 +338,11 @@ function DirectPlayer({
       applyingRemote.current = false;
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [playback, isHost]);
+  }, [playback, isHost, socket]);
 
-  const onChange = (playing: boolean) => {
+  const onChange = (playing: boolean, seek = false) => {
     const video = videoRef.current;
-    if (!video || applyingRemote.current) return;
+    if (!video || applyingRemote.current || (!seek && playing === playbackRef.current.isPlaying)) return;
     emitPlayback(playing, video.currentTime);
   };
 
@@ -354,7 +357,7 @@ function DirectPlayer({
         preload="metadata"
         onPlay={() => onChange(true)}
         onPause={() => onChange(false)}
-        onSeeked={() => onChange(!videoRef.current?.paused)}
+        onSeeked={() => onChange(!videoRef.current?.paused, true)}
         onTimeUpdate={() => {
           const video = videoRef.current;
           if (isHost && video && !video.paused && Date.now() - lastSent.current > 1800) {

@@ -22,7 +22,8 @@ type Job = {
 
 const jobs = new Map<string, Job>();
 const allowedHost = (hostname: string) =>
-  hostname === "fj-ios.com" || hostname === "tdmm2.ir" || hostname.endsWith(".tdmm2.ir");
+  hostname === "fj-ios.com" || hostname === "tdmm2.ir" || hostname.endsWith(".tdmm2.ir") ||
+  hostname === "main-dl.fastserver29venom64.fun";
 
 async function resolveSource(input: string) {
   let target = new URL(input);
