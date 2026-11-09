@@ -26,7 +26,7 @@ export function getPlayableSource(input: string) {
       url.hostname.endsWith(".tdmm2.ir");
     const filename = `${url.pathname}?${url.searchParams.get("f") || ""}`;
     return provider && /\.mkv(?:$|[?&])/i.test(filename)
-      ? `/api/media?url=${encodeURIComponent(input)}`
+      ? `/api/media/transcode/index.m3u8?url=${encodeURIComponent(input)}`
       : input;
   } catch {
     return input;

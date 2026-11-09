@@ -1,15 +1,22 @@
 @import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
-.solid-glass { --lg-glass: rgb(245 245 245 / .96); --lg-glass-active: rgb(230 230 230 / .98); }
-.dark.solid-glass { --lg-glass: rgb(38 38 38 / .96); --lg-glass-active: rgb(58 58 58 / .98); }
+.solid-glass {
+  --lg-glass: rgb(245 245 245 / 0.96);
+  --lg-glass-active: rgb(230 230 230 / 0.98);
+}
+.dark.solid-glass {
+  --lg-glass: rgb(38 38 38 / 0.96);
+  --lg-glass-active: rgb(58 58 58 / 0.98);
+}
 html {
   font-family: Vazirmatn, sans-serif;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  color-scheme: light;
 }
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #f2f2f7;
   color: #000;
 }
@@ -17,6 +24,7 @@ html.dark body {
   background: #000;
   color: #fff;
 }
+html.dark { color-scheme: dark; }
 button {
   touch-action: manipulation;
   user-select: none;

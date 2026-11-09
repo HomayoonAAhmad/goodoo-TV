@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Camera, ChevronRight, LogOut, UserRound } from "lucide-react";
 import { Button, Input, Switch } from "glisse";
 import { ThemeToggle } from "./theme-toggle";
-import { AppDock } from "./app-dock";
 import { disconnectSocket } from "@/lib/socket";
 type Profile = { firstName: string; lastName: string; username: string; avatar: string };
 export function ProfileScreen({ initial, phone }: { initial: Profile; phone: string }) {
@@ -67,8 +66,8 @@ export function ProfileScreen({ initial, phone }: { initial: Profile; phone: str
     router.refresh();
   }
   return (
-    <main className="mx-auto min-h-dvh max-w-3xl px-4 pb-32 pt-5 text-stone-950 dark:text-stone-50 sm:px-8">
-      <header className="flex items-center justify-between">
+    <main className="mx-auto flex h-dvh max-w-3xl flex-col overflow-hidden px-4 pt-[max(20px,env(safe-area-inset-top))] text-stone-950 dark:text-stone-50 sm:px-8">
+      <header className="flex shrink-0 items-center justify-between">
         <Button
           variant="glass"
           icon={<ChevronRight size={19} />}
@@ -82,6 +81,11 @@ export function ProfileScreen({ initial, phone }: { initial: Profile; phone: str
           </Button>
         </div>
       </header>
+      <div
+        tabIndex={0}
+        aria-label="محتوای پروفایل"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(96px+env(safe-area-inset-bottom))]"
+      >
       <section className="mt-8 flex flex-col items-center text-center">
         <button
           aria-label="تغییر عکس پروفایل"
@@ -208,7 +212,7 @@ export function ProfileScreen({ initial, phone }: { initial: Profile; phone: str
           }}
         />
       </section>
-      <AppDock active="profile" avatar={profile.avatar} />
+      </div>
     </main>
   );
 }

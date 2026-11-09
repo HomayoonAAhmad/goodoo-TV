@@ -11,6 +11,7 @@ const app = next({ dev: process.env.NODE_ENV !== "production", hostname, port })
 // shortcut: presence lives in one Node process, add a Socket.IO adapter before scaling horizontally.
 const presence = new Map();
 const roomQueues = new Map();
+const playbackControllers = new Map();
 
 function withRoomLock(code, task) {
   const previous = roomQueues.get(code) || Promise.resolve();
@@ -24,6 +25,7 @@ function withRoomLock(code, task) {
 async function removeMember(io, code, socketId) {
   const members = presence.get(code);
   if (!members || !members.delete(socketId)) return;
+  if (playbackControllers.get(code) === socketId) playbackControllers.delete(code);
   if (members.size) {
     io.to(code).emit("room:members", [...members.values()]);
     return;
@@ -97,6 +99,8 @@ app.prepare().then(async () => {
             avatar: socket.data.user.avatar,
           });
           presence.set(code, members);
+          if (room.hostId === socket.data.user.id && !playbackControllers.has(code))
+            playbackControllers.set(code, socket.id);
           io.to(code).emit("room:members", [...members.values()]);
           const currentTime =
             room.currentTime +
@@ -115,25 +119,30 @@ app.prepare().then(async () => {
       }
     });
 
-    socket.on("playback:update", async ({ roomId, isPlaying, currentTime }) => {
-      if (!Number.isFinite(currentTime) || currentTime < 0) return;
+    socket.on("playback:update", ({ roomId, isPlaying, currentTime, isControl }) => {
+      if (
+        typeof isPlaying !== "boolean" ||
+        typeof isControl !== "boolean" ||
+        !Number.isFinite(currentTime) ||
+        currentTime < 0
+      ) return;
       const code = String(roomId || "").toUpperCase();
       if (!socket.rooms.has(code)) return;
-      try {
-        const room = await prisma.room.findUnique({ where: { code } });
-        if (!room || (room.hostId !== socket.data.user.id && isPlaying !== false)) return;
+      withRoomLock(code, async () => {
+        if (!socket.rooms.has(code)) return;
+        if (isControl) playbackControllers.set(code, socket.id);
+        else if (playbackControllers.has(code) && playbackControllers.get(code) !== socket.id) return;
         const updated = await prisma.room.update({
           where: { code },
-          data: { isPlaying: Boolean(isPlaying), currentTime: room.hostId === socket.data.user.id ? currentTime : room.currentTime },
+          data: { isPlaying, currentTime },
         });
-        (room.hostId === socket.data.user.id ? socket.to(code) : io.to(code)).emit("playback:update", {
+        io.to(code).emit("playback:update", {
           isPlaying: updated.isPlaying,
           currentTime: updated.currentTime,
           updatedAt: updated.updatedAt.getTime(),
+          controllerId: socket.id,
         });
-      } catch (error) {
-        console.error("Could not update playback", error);
-      }
+      }).catch((error) => console.error("Could not update playback", error));
     });
 
     socket.on("room:leave", ({ roomId }) => {

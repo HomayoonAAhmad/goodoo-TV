@@ -4,17 +4,26 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "glisse";
 
+function applyTheme(value: boolean) {
+  const color = value ? "#000000" : "#f2f2f7";
+  document.documentElement.classList.toggle("dark", value);
+  document.documentElement.dataset.theme = value ? "dark" : "light";
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute("content", color));
+  document.cookie = `goodoo-theme=${value ? "dark" : "light"}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
 export function ThemeToggle() {
   const [dark, setDark] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem("goodoo-theme") === "dark";
-    document.documentElement.classList.toggle("dark", saved);
-    document.documentElement.dataset.theme = saved ? "dark" : "light";
+    applyTheme(saved);
     document.documentElement.classList.toggle("solid-glass", localStorage.getItem("goodoo-solid") === "true");
     setDark(saved);
   }, []);
   useEffect(() => {
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) =>
+      meta.setAttribute("content", dark ? "#000000" : "#f2f2f7"),
+    );
   }, [dark]);
   return (
     <Button
@@ -24,8 +33,7 @@ export function ThemeToggle() {
       onClick={() => {
         const next = !dark;
         setDark(next);
-        document.documentElement.classList.toggle("dark", next);
-        document.documentElement.dataset.theme = next ? "dark" : "light";
+        applyTheme(next);
         localStorage.setItem("goodoo-theme", next ? "dark" : "light");
       }}
     />

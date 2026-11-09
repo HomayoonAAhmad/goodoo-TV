@@ -9,7 +9,6 @@ import { ArrowLeft, CirclePlay, Link2, LogIn, UserRound, Users } from "lucide-re
 import { Button, Input } from "glisse";
 import { getSocket } from "@/lib/socket";
 import { ThemeToggle } from "./theme-toggle";
-import { AppDock } from "./app-dock";
 
 export function HomeScreen({ name, avatar }: { name: string; avatar: string }) {
   const router = useRouter();
@@ -37,7 +36,7 @@ export function HomeScreen({ name, avatar }: { name: string; avatar: string }) {
     router.push(`/room/${cleaned}`);
   }
   return (
-    <main className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-5 sm:px-8">
+    <main className="mx-auto h-[calc(100dvh-30px)] max-w-3xl overflow-y-hidden px-4 pb-[calc(82px+env(safe-area-inset-bottom))] pt-[max(20px,env(safe-area-inset-top))] sm:px-8">
       <header className="flex items-center justify-between pb-5">
         <Link href="/" className="flex items-center gap-2 font-extrabold">
           {/* <span className="grid size-9 place-items-center rounded-xl bg-stone-900 text-white dark:bg-white dark:text-stone-900"> */}
@@ -116,7 +115,6 @@ export function HomeScreen({ name, avatar }: { name: string; avatar: string }) {
           {error}
         </p>
       )}
-      <AppDock active="home" avatar={avatar} />
     </main>
   );
 }

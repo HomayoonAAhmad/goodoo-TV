@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   Play,
   Radio,
+  RefreshCw,
   Users,
 } from "lucide-react";
 import { Button } from "glisse";
@@ -17,6 +18,7 @@ import { getPlayableSource, getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
 
 type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number };
+type TranscodeStatus = { ready: boolean; finished: boolean; error: boolean; percent: number | null; etaSeconds: number | null };
 type Member = { name: string; avatar: string | null };
 type RoomData = {
   roomId: string;
@@ -148,6 +150,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
             />
           </div>
         </div>
+        <TranscodeProgress source={room.source} />
         <RoomInfoCard roomId={roomId} source={room.source} members={room.members} sharing={sharing} onInvite={shareInvite} />
         {!room.isHost && (
           <p className="mt-4 text-center text-xs text-[#8e8e93]">برای شروع، یک بار روی پخش بزن.</p>
@@ -161,6 +164,48 @@ export function RoomScreen({ roomId }: { roomId: string }) {
         </Button>
       </section>
     </main>
+  );
+}
+
+function TranscodeProgress({ source }: { source: string }) {
+  const playable = getPlayableSource(source);
+  const [status, setStatus] = useState<TranscodeStatus | null>(null);
+  useEffect(() => {
+    if (!playable.startsWith("/api/media/transcode/index.m3u8?")) return;
+    let active = true;
+    const statusUrl = playable.replace("/index.m3u8?", "/status.json?");
+    const poll = async () => {
+      try {
+        const response = await fetch(statusUrl, { cache: "no-store" });
+        if (response.ok && active) {
+          const next: TranscodeStatus = await response.json();
+          setStatus(next);
+          if (next.finished) window.clearInterval(timer);
+        }
+      } catch {}
+    };
+    const timer = window.setInterval(poll, 1000);
+    void poll();
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [playable]);
+  if (!status || status.finished) return null;
+  const eta = status.etaSeconds === null ? "زمان در حال محاسبه" : `حدود ${Math.ceil(status.etaSeconds / 60)} دقیقه مانده`;
+  return (
+    <div className="mt-3 rounded-2xl border border-black/5 bg-white px-4 py-3 dark:border-white/5 dark:bg-[#1c1c1e]" aria-live="polite">
+      <div className="flex items-center gap-3">
+        <RefreshCw size={18} className="shrink-0 animate-spin text-[#007aff] dark:text-[#0a84ff]" />
+        <div className="min-w-0 flex-1">
+          <div className="flex justify-between gap-3 text-xs">
+            <span>{status.ready ? "تبدیل برای پخش" : "آماده‌سازی شروع ویدیو"}</span>
+            <span className="shrink-0 text-[#8e8e93]">{status.percent === null ? "…" : `${status.percent}٪`} · {eta}</span>
+          </div>
+          <progress className="mt-2 h-1 w-full accent-blue-500" max={100} value={status.percent ?? undefined} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -241,8 +286,8 @@ function DirectPlayer({
   const lastSent = useRef(0);
   const [needsGesture, setNeedsGesture] = useState(false);
   const emitPlayback = useCallback(
-    (isPlaying: boolean, currentTime: number) =>
-      socket.emit("playback:update", { roomId, isPlaying, currentTime }),
+    (isPlaying: boolean, currentTime: number, isControl = true) =>
+      socket.emit("playback:update", { roomId, isPlaying, currentTime, isControl }),
     [roomId, socket],
   );
 
@@ -274,18 +319,18 @@ function DirectPlayer({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || isHost) return;
+    if (!video) return;
     applyingRemote.current = true;
     const target =
       playback.currentTime +
       (playback.isPlaying ? Math.max(0, (Date.now() - playback.updatedAt) / 1000) : 0);
     if (Math.abs(video.currentTime - target) > 1.15) video.currentTime = target;
-    if (playback.isPlaying)
+    if (playback.isPlaying && video.paused)
       video
         .play()
         .then(() => setNeedsGesture(false))
         .catch(() => setNeedsGesture(true));
-    else video.pause();
+    else if (!playback.isPlaying && !video.paused) video.pause();
     const timer = window.setTimeout(() => {
       applyingRemote.current = false;
     }, 250);
@@ -295,8 +340,7 @@ function DirectPlayer({
   const onChange = (playing: boolean) => {
     const video = videoRef.current;
     if (!video || applyingRemote.current) return;
-    if (isHost) emitPlayback(playing, video.currentTime);
-    else if (!playing) emitPlayback(false, video.currentTime);
+    emitPlayback(playing, video.currentTime);
   };
 
   return (
@@ -315,12 +359,12 @@ function DirectPlayer({
           const video = videoRef.current;
           if (isHost && video && !video.paused && Date.now() - lastSent.current > 1800) {
             lastSent.current = Date.now();
-            emitPlayback(true, video.currentTime);
+            emitPlayback(true, video.currentTime, false);
           }
         }}
         onError={() => setFailed(true)}
       />
-      {needsGesture && !isHost && playback.isPlaying && (
+      {needsGesture && playback.isPlaying && (
         <Button
           variant="glass"
           className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl bg-white px-4 py-3 text-xs text-stone-900"
@@ -380,15 +424,14 @@ function YoutubePlayer({
             applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote, applyVersion),
           onStateChange: (event: { data: number }) => {
             if (applyingRemote.current || !playerRef.current) return;
+            if (![0, 1, 2].includes(event.data)) return;
             const current = playerRef.current.getCurrentTime();
-            if (isHost && [0, 1, 2].includes(event.data))
-              socket.emit("playback:update", {
-                roomId,
-                isPlaying: event.data === 1,
-                currentTime: current,
-              });
-            else if (!isHost && event.data === 2)
-              socket.emit("playback:update", { roomId, isPlaying: false, currentTime: current });
+            socket.emit("playback:update", {
+              roomId,
+              isPlaying: event.data === 1,
+              currentTime: current,
+              isControl: true,
+            });
           },
         },
       }) as PlayerApi;
@@ -428,6 +471,7 @@ function YoutubePlayer({
           roomId,
           isPlaying: true,
           currentTime: player.getCurrentTime(),
+          isControl: false,
         });
     }, 2000);
     return () => window.clearInterval(timer);

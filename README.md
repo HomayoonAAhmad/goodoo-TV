@@ -66,7 +66,7 @@ Sessions expire after 30 days. The browser stores a random session token in an H
 
 ## Video sources
 
-YouTube links are played with the YouTube IFrame Player API. Direct video URLs and HLS streams are played in the browser. Supported containers, codecs, and HLS playback vary by browser and device. HLS sources used in browsers that require hls.js must allow cross-origin requests (CORS) from the app's origin. The app validates that room sources use HTTP or HTTPS, but does not proxy or host video content.
+YouTube links are played with the YouTube IFrame Player API. Direct video URLs and HLS streams are played in the browser. MKV links from `fj-ios.com` and `tdmm2.ir` are transcoded to HLS with FFmpeg for Safari compatibility; Docker images install FFmpeg. Transcodes use temporary disk space and CPU, allow at most two active jobs, and are removed after 30 minutes without requests. Embedded subtitles are not included in the HLS output. Other containers and codecs remain subject to browser support.
 
 ## Environment variables
 
