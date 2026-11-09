@@ -60,12 +60,15 @@ async function resolveSource(input: string) {
 
 function touch(id: string, job: Job) {
   clearTimeout(job.cleanup);
-  job.cleanup = setTimeout(() => {
-    if (jobs.get(id) !== job) return;
-    jobs.delete(id);
-    job.child?.kill("SIGTERM");
-    if (job.dir) void rm(job.dir, { recursive: true, force: true });
-  }, 30 * 60 * 1000);
+  job.cleanup = setTimeout(
+    () => {
+      if (jobs.get(id) !== job) return;
+      jobs.delete(id);
+      job.child?.kill("SIGTERM");
+      if (job.dir) void rm(job.dir, { recursive: true, force: true });
+    },
+    30 * 60 * 1000,
+  );
   job.cleanup.unref();
 }
 
@@ -76,11 +79,42 @@ async function start(job: Job, input: string) {
   const child = spawn(
     "ffmpeg",
     [
-      "-nostdin", "-y", "-i", source, "-map", "0:v:0", "-map", "0:a:0?",
-      "-c:v", "libx264", "-preset", "ultrafast", "-threads", "2", "-crf", "23",
-      "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-progress", "pipe:1", "-nostats", "-f", "hls",
-      "-hls_time", "6", "-hls_list_size", "0", "-hls_flags", "independent_segments",
-      "-hls_segment_filename", join(job.dir, "segment_%05d.ts"), playlist,
+      "-nostdin",
+      "-y",
+      "-i",
+      source,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-threads",
+      "2",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-ac",
+      "2",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-f",
+      "hls",
+      "-hls_time",
+      "10",
+      "-hls_list_size",
+      "0",
+      "-hls_flags",
+      "independent_segments+temp_file",
+      "-hls_segment_filename",
+      join(job.dir, "segment_%05d.ts"),
+      playlist,
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -98,7 +132,8 @@ async function start(job: Job, input: string) {
   });
   child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
     const match = chunk.match(/Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/);
-    if (match) job.durationSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+    if (match)
+      job.durationSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
   });
   child.once("error", (error) => {
     job.error = error;
@@ -172,16 +207,22 @@ async function serve(request: Request, asset: string) {
         : null;
       const elapsed = (Date.now() - job.startedAt) / 1000;
       const speed = elapsed ? job.processedSeconds / elapsed : 0;
-      return Response.json({
-        ready: job.readyForPlayback,
-        finished: job.finished,
-        error: Boolean(job.error),
-        percent: job.finished && !job.error ? 100 : percent,
-        etaSeconds: speed && job.durationSeconds
-          ? Math.max(0, Math.ceil((job.durationSeconds - job.processedSeconds) / speed))
-          : null,
-      }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json(
+        {
+          ready: job.readyForPlayback,
+          finished: job.finished,
+          error: Boolean(job.error),
+          percent: job.finished && !job.error ? 100 : percent,
+          etaSeconds:
+            speed && job.durationSeconds
+              ? Math.max(0, Math.ceil((job.durationSeconds - job.processedSeconds) / speed))
+              : null,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
+    if (/^segment_\d+\.ts$/.test(asset) && !(await stat(join(job.dir, asset)).catch(() => null)))
+      return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
     const path = join(job.dir, asset);
     if (asset === "index.m3u8") {
       const playlist = (await readFile(path, "utf8")).replace(
@@ -201,10 +242,7 @@ async function serve(request: Request, asset: string) {
   }
 }
 
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ asset: string[] }> },
-) {
+export async function GET(request: Request, context: { params: Promise<{ asset: string[] }> }) {
   const { asset } = await context.params;
   return serve(request, asset.join("/"));
 }
