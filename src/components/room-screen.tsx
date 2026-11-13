@@ -17,7 +17,7 @@ import { getSocket } from "@/lib/socket";
 import { getPlayableSource, getYoutubeId, isHlsUrl } from "@/lib/media";
 import { ThemeToggle } from "./theme-toggle";
 
-type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number; controllerId?: string };
+type Playback = { isPlaying: boolean; currentTime: number; updatedAt: number; controllerId?: string; isControl?: boolean };
 type TranscodeStatus = { ready: boolean; finished: boolean; error: boolean; percent: number | null; etaSeconds: number | null };
 type Member = { name: string; avatar: string | null };
 type RoomData = {
@@ -33,7 +33,7 @@ type PlayerApi = {
   pauseVideo: () => void;
   seekTo: (time: number, allow: boolean) => void;
   getCurrentTime: () => number;
-  getPlayerState?: () => number;
+  getPlayerState: () => number;
   destroy: () => void;
 };
 type SocketLike = ReturnType<typeof getSocket>;
@@ -283,15 +283,22 @@ function DirectPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const applyingRemote = useRef(false);
+  const remoteTimer = useRef(0);
+  const remoteSeek = useRef<number | null>(null);
+  const pendingLocal = useRef<{ isPlaying: boolean; seq: number; expiresAt: number } | null>(null);
+  const localSeq = useRef(0);
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
   const lastSent = useRef(0);
   const [needsGesture, setNeedsGesture] = useState(false);
-  const emitPlayback = useCallback(
-    (isPlaying: boolean, currentTime: number, isControl = true) =>
-      socket.emit("playback:update", { roomId, isPlaying, currentTime, isControl }),
-    [roomId, socket],
-  );
+  const emitPlayback = useCallback((isPlaying: boolean, currentTime: number, isControl = true) => {
+    if (!isControl) return socket.emit("playback:update", { roomId, isPlaying, currentTime, isControl });
+    const seq = ++localSeq.current;
+    pendingLocal.current = { isPlaying, seq, expiresAt: Date.now() + 1500 };
+    socket.emit("playback:update", { roomId, isPlaying, currentTime, isControl }, () => {
+      if (pendingLocal.current?.seq === seq) pendingLocal.current = null;
+    });
+  }, [roomId, socket]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -322,27 +329,41 @@ function DirectPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (playback.controllerId && playback.controllerId === socket.id) return;
-    applyingRemote.current = true;
-    const target =
-      playback.currentTime +
-      (playback.isPlaying ? Math.max(0, (Date.now() - playback.updatedAt) / 1000) : 0);
-    if (Math.abs(video.currentTime - target) > 1.15) video.currentTime = target;
-    if (playback.isPlaying && video.paused)
-      video
-        .play()
-        .then(() => setNeedsGesture(false))
-        .catch(() => setNeedsGesture(true));
-    else if (!playback.isPlaying && !video.paused) video.pause();
-    const timer = window.setTimeout(() => {
-      applyingRemote.current = false;
-    }, 250);
-    return () => window.clearTimeout(timer);
+    const apply = () => {
+      if (pendingLocal.current && pendingLocal.current.expiresAt > Date.now()) return;
+      const latest = playbackRef.current;
+      if (latest.controllerId && latest.controllerId === socket.id) return;
+      const target = latest.currentTime +
+        (latest.isPlaying ? Math.max(0, (Date.now() - latest.updatedAt) / 1000) : 0);
+      const seek = Math.abs(video.currentTime - target) > (latest.isControl === false ? 2.5 : 1.15);
+      const play = latest.isPlaying && video.paused;
+      const pause = !latest.isPlaying && !video.paused;
+      if (!seek && !play && !pause) return;
+      applyingRemote.current = true;
+      if (seek) {
+        remoteSeek.current = target;
+        video.currentTime = target;
+      }
+      if (play)
+        video.play().then(() => setNeedsGesture(false)).catch(() => setNeedsGesture(true));
+      else if (pause) video.pause();
+      window.clearTimeout(remoteTimer.current);
+      remoteTimer.current = window.setTimeout(() => { applyingRemote.current = false; }, 250);
+    };
+    const pending = pendingLocal.current;
+    const retryTimer = pending && pending.expiresAt > Date.now()
+      ? window.setTimeout(apply, pending.expiresAt - Date.now())
+      : 0;
+    if (!retryTimer) apply();
+    return () => window.clearTimeout(retryTimer);
   }, [playback, isHost, socket]);
 
   const onChange = (playing: boolean, seek = false) => {
     const video = videoRef.current;
-    if (!video || applyingRemote.current || (!seek && playing === playbackRef.current.isPlaying)) return;
+    if (!video || applyingRemote.current) return;
+    const pending = pendingLocal.current;
+    const expected = pending && pending.expiresAt > Date.now() ? pending : playbackRef.current;
+    if (!seek && playing === expected.isPlaying) return;
     emitPlayback(playing, video.currentTime);
   };
 
@@ -357,10 +378,18 @@ function DirectPlayer({
         preload="metadata"
         onPlay={() => onChange(true)}
         onPause={() => onChange(false)}
-        onSeeked={() => onChange(!videoRef.current?.paused, true)}
+        onSeeked={() => {
+          const video = videoRef.current;
+          if (video && remoteSeek.current !== null && Math.abs(video.currentTime - remoteSeek.current) < 1.15) {
+            remoteSeek.current = null;
+            return;
+          }
+          remoteSeek.current = null;
+          onChange(!video?.paused, true);
+        }}
         onTimeUpdate={() => {
           const video = videoRef.current;
-          if (isHost && video && !video.paused && Date.now() - lastSent.current > 1800) {
+          if ((isHost || playbackRef.current.controllerId === socket.id) && video && !video.paused && Date.now() - lastSent.current > 1800) {
             lastSent.current = Date.now();
             emitPlayback(true, video.currentTime, false);
           }
@@ -413,9 +442,21 @@ function YoutubePlayer({
   const applyingRemote = useRef(false);
   const applyVersion = useRef(0);
   const lastRemoteAction = useRef<{ time: number; isPlaying: boolean; at: number } | null>(null);
+  const lastSample = useRef<{ time: number; at: number; state: number } | null>(null);
+  const waitingSince = useRef<number | null>(null);
+  const pendingLocal = useRef<(Playback & { seq: number; expiresAt: number }) | null>(null);
+  const localSeq = useRef(0);
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
   const [needsGesture, setNeedsGesture] = useState(false);
+  const sendControl = useCallback((isPlaying: boolean, currentTime: number) => {
+    const seq = ++localSeq.current;
+    pendingLocal.current = { isPlaying, currentTime, updatedAt: Date.now(), seq, expiresAt: Date.now() + 1500 };
+    lastRemoteAction.current = null;
+    socket.emit("playback:update", { roomId, isPlaying, currentTime, isControl: true }, () => {
+      if (pendingLocal.current?.seq === seq) pendingLocal.current = null;
+    });
+  }, [roomId, socket]);
 
   useEffect(() => {
     let cancelled = false;
@@ -438,6 +479,7 @@ function YoutubePlayer({
           onStateChange: (event: { data: number }) => {
             if (!readyRef.current || !playerRef.current) return;
             if (![0, 1, 2].includes(event.data)) return;
+            if (event.data !== 0 && playerRef.current.getPlayerState() !== event.data) return;
             if (event.data === 1) {
               autoplayBlocked.current = false;
               setNeedsGesture(false);
@@ -451,17 +493,10 @@ function YoutubePlayer({
               return;
             }
             if (applyingRemote.current) return;
-            const expected = playbackRef.current;
-            const target = expected.currentTime +
-              (expected.isPlaying ? Math.max(0, (Date.now() - expected.updatedAt) / 1000) : 0);
-            if (event.data !== 0 && (event.data === 1) === expected.isPlaying && Math.abs(current - target) < 1.5) return;
-            lastRemoteAction.current = null;
-            socket.emit("playback:update", {
-              roomId,
-              isPlaying: event.data === 1,
-              currentTime: current,
-              isControl: true,
-            });
+            const pending = pendingLocal.current;
+            const expected = pending && pending.expiresAt > Date.now() ? pending : playbackRef.current;
+            if (event.data !== 0 && (event.data === 1) === expected.isPlaying) return;
+            sendControl(event.data === 1, current);
           },
         },
       }) as PlayerApi;
@@ -490,19 +525,56 @@ function YoutubePlayer({
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [id, isHost, roomId, socket]);
+  }, [id, sendControl]);
 
   useEffect(() => {
-    if (!readyRef.current || playback.controllerId === socket.id) return;
-    const timer = window.setTimeout(() =>
-      applyYoutubePlayback(playerRef.current, playback, applyingRemote, applyVersion, lastRemoteAction), 120);
+    const pending = pendingLocal.current;
+    if (!readyRef.current) return;
+    const delay = pending && pending.expiresAt > Date.now() ? pending.expiresAt - Date.now() : 120;
+    const timer = window.setTimeout(() => {
+      if (pendingLocal.current && pendingLocal.current.expiresAt > Date.now()) return;
+      const latest = playbackRef.current;
+      if (latest.controllerId !== socket.id)
+        applyYoutubePlayback(playerRef.current, latest, applyingRemote, applyVersion, lastRemoteAction);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [playback, socket]);
   useEffect(() => {
-    if (!isHost) return;
     const timer = window.setInterval(() => {
       const player = playerRef.current;
-      if (readyRef.current && !applyingRemote.current && player?.getPlayerState?.() === 1)
+      if (!readyRef.current || !player) return;
+      const state = player.getPlayerState();
+      const now = Date.now();
+      const pending = pendingLocal.current;
+      const activePending = pending && pending.expiresAt > now ? pending : null;
+      const expected = activePending ?? playbackRef.current;
+      if (expected.isPlaying && state !== 1) {
+        waitingSince.current ??= now;
+        if (now - waitingSince.current > 1500) setNeedsGesture(true);
+      } else {
+        waitingSince.current = null;
+        setNeedsGesture(false);
+      }
+      if (state === -1 || state === 5) return;
+      const time = player.getCurrentTime();
+      const previous = lastSample.current;
+      lastSample.current = { time, at: now, state };
+      if (!previous || applyingRemote.current) return;
+      const expectedTime = previous.time + (previous.state === 1 ? (now - previous.at) / 1000 : 0);
+      if (Math.abs(time - expectedTime) < 1.8) return;
+      const remote = lastRemoteAction.current;
+      if (!activePending && remote && now - remote.at < 8000 && Math.abs(time - remote.time) < 2.5) return;
+      sendControl(state === 1 || (state === 3 && expected.isPlaying), time);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [sendControl]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const player = playerRef.current;
+      if ((isHost || playbackRef.current.controllerId === socket.id) &&
+          readyRef.current && !applyingRemote.current &&
+          (!pendingLocal.current || pendingLocal.current.expiresAt <= Date.now()) &&
+          player?.getPlayerState() === 1)
         socket.emit("playback:update", {
           roomId,
           isPlaying: true,
@@ -541,9 +613,10 @@ function applyYoutubePlayback(
     (playback.isPlaying ? Math.max(0, (Date.now() - playback.updatedAt) / 1000) : 0);
   let version = 0;
   try {
-    const state = player.getPlayerState?.();
-    const seek = Math.abs(player.getCurrentTime() - target) > 1.5;
-    const play = playback.isPlaying && state !== 1 && state !== 3;
+    const state = player.getPlayerState();
+    const seek = Math.abs(player.getCurrentTime() - target) > (playback.isControl === false ? 2.5 : 1.5);
+    const play = playback.isPlaying && state !== 1 &&
+      (state !== 3 || lastRemoteAction.current?.isPlaying !== true);
     const pause = !playback.isPlaying && (state === 1 || state === 3);
     if (!seek && !play && !pause) return;
     version = ++applyVersion.current;

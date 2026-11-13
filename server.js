@@ -113,7 +113,7 @@ app.prepare().then(async () => {
             hostName: room.host.firstName || room.host.name || room.host.username || "میزبان",
             isHost: room.hostId === socket.data.user.id,
             members: [...members.values()],
-            playback: { isPlaying: room.isPlaying, currentTime, updatedAt: Date.now() },
+            playback: { isPlaying: room.isPlaying, currentTime, updatedAt: Date.now(), isControl: true },
           });
         });
       } catch {
@@ -121,7 +121,7 @@ app.prepare().then(async () => {
       }
     });
 
-    socket.on("playback:update", ({ roomId, isPlaying, currentTime, isControl }) => {
+    socket.on("playback:update", ({ roomId, isPlaying, currentTime, isControl }, done) => {
       if (
         typeof isPlaying !== "boolean" ||
         typeof isControl !== "boolean" ||
@@ -147,7 +147,9 @@ app.prepare().then(async () => {
           currentTime: updated.currentTime,
           updatedAt: updated.updatedAt.getTime(),
           controllerId: socket.id,
+          isControl,
         });
+        if (typeof done === "function") done();
       }).catch((error) => console.error("Could not update playback", error));
     });
 
