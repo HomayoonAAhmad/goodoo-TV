@@ -408,10 +408,14 @@ function YoutubePlayer({
   socket: SocketLike;
 }) {
   const playerRef = useRef<PlayerApi | null>(null);
+  const readyRef = useRef(false);
+  const autoplayBlocked = useRef(false);
   const applyingRemote = useRef(false);
   const applyVersion = useRef(0);
+  const lastRemoteAction = useRef<{ time: number; isPlaying: boolean; at: number } | null>(null);
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
+  const [needsGesture, setNeedsGesture] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -421,14 +425,37 @@ function YoutubePlayer({
         width: "100%",
         height: "100%",
         videoId: id,
-        playerVars: { playsinline: 1, controls: 1, rel: 0 },
+        playerVars: { playsinline: 1, controls: 1, rel: 0, cc_load_policy: 1 },
         events: {
-          onReady: () =>
-            applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote, applyVersion),
+          onReady: () => {
+            readyRef.current = true;
+            applyYoutubePlayback(playerRef.current, playbackRef.current, applyingRemote, applyVersion, lastRemoteAction);
+          },
+          onAutoplayBlocked: () => {
+            autoplayBlocked.current = true;
+            setNeedsGesture(true);
+          },
           onStateChange: (event: { data: number }) => {
-            if (applyingRemote.current || !playerRef.current) return;
+            if (!readyRef.current || !playerRef.current) return;
             if (![0, 1, 2].includes(event.data)) return;
+            if (event.data === 1) {
+              autoplayBlocked.current = false;
+              setNeedsGesture(false);
+            }
+            if (event.data === 2 && autoplayBlocked.current) return;
             const current = playerRef.current.getCurrentTime();
+            const remote = lastRemoteAction.current;
+            if (remote && Date.now() - remote.at < 8000 && event.data !== 0 &&
+              (event.data === 1) === remote.isPlaying && Math.abs(current - remote.time) < 2.5) {
+              lastRemoteAction.current = null;
+              return;
+            }
+            if (applyingRemote.current) return;
+            const expected = playbackRef.current;
+            const target = expected.currentTime +
+              (expected.isPlaying ? Math.max(0, (Date.now() - expected.updatedAt) / 1000) : 0);
+            if (event.data !== 0 && (event.data === 1) === expected.isPlaying && Math.abs(current - target) < 1.5) return;
+            lastRemoteAction.current = null;
             socket.emit("playback:update", {
               roomId,
               isPlaying: event.data === 1,
@@ -457,19 +484,25 @@ function YoutubePlayer({
     }
     return () => {
       cancelled = true;
+      readyRef.current = false;
+      autoplayBlocked.current = false;
+      applyVersion.current++;
       playerRef.current?.destroy();
       playerRef.current = null;
     };
   }, [id, isHost, roomId, socket]);
 
   useEffect(() => {
-    applyYoutubePlayback(playerRef.current, playback, applyingRemote, applyVersion);
-  }, [playback]);
+    if (!readyRef.current || playback.controllerId === socket.id) return;
+    const timer = window.setTimeout(() =>
+      applyYoutubePlayback(playerRef.current, playback, applyingRemote, applyVersion, lastRemoteAction), 120);
+    return () => window.clearTimeout(timer);
+  }, [playback, socket]);
   useEffect(() => {
     if (!isHost) return;
     const timer = window.setInterval(() => {
       const player = playerRef.current;
-      if (player && player.getPlayerState?.() === 1)
+      if (readyRef.current && !applyingRemote.current && player?.getPlayerState?.() === 1)
         socket.emit("playback:update", {
           roomId,
           isPlaying: true,
@@ -482,6 +515,15 @@ function YoutubePlayer({
   return (
     <div className="relative size-full [&_iframe]:size-full">
       <div className="size-full" id={`youtube-${id}`} />
+      {needsGesture && playback.isPlaying && (
+        <Button
+          variant="glass"
+          className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl bg-white px-4 py-3 text-xs text-stone-900"
+          onClick={() => playerRef.current?.playVideo()}
+        >
+          <Play size={19} fill="currentColor" /> برای شروع تماشای هم‌زمان بزن
+        </Button>
+      )}
     </div>
   );
 }
@@ -491,19 +533,27 @@ function applyYoutubePlayback(
   playback: Playback,
   applyingRemote: { current: boolean },
   applyVersion: { current: number },
+  lastRemoteAction: { current: { time: number; isPlaying: boolean; at: number } | null },
 ) {
   if (!player) return;
-  const version = ++applyVersion.current;
-  applyingRemote.current = true;
   const target =
     playback.currentTime +
     (playback.isPlaying ? Math.max(0, (Date.now() - playback.updatedAt) / 1000) : 0);
+  let version = 0;
   try {
-    if (Math.abs(player.getCurrentTime() - target) > 1.5) player.seekTo(target, true);
-    if (playback.isPlaying) player.playVideo();
-    else player.pauseVideo();
+    const state = player.getPlayerState?.();
+    const seek = Math.abs(player.getCurrentTime() - target) > 1.5;
+    const play = playback.isPlaying && state !== 1 && state !== 3;
+    const pause = !playback.isPlaying && (state === 1 || state === 3);
+    if (!seek && !play && !pause) return;
+    version = ++applyVersion.current;
+    applyingRemote.current = true;
+    lastRemoteAction.current = { time: target, isPlaying: playback.isPlaying, at: Date.now() };
+    if (seek) player.seekTo(target, true);
+    if (play) player.playVideo();
+    else if (pause) player.pauseVideo();
   } catch {}
-  window.setTimeout(() => {
+  if (version) window.setTimeout(() => {
     if (version === applyVersion.current) applyingRemote.current = false;
   }, 300);
 }

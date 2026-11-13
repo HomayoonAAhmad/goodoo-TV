@@ -3,6 +3,7 @@ const { createHash, randomBytes } = require("node:crypto");
 const next = require("next");
 const { Server } = require("socket.io");
 const { PrismaClient } = require("@prisma/client");
+const { latestPlaybackUpdate, clearPlaybackUpdates } = require("./src/lib/latest-playback-update");
 
 const prisma = new PrismaClient();
 const port = Number(process.env.PORT || 3000);
@@ -31,6 +32,7 @@ async function removeMember(io, code, socketId) {
     return;
   }
   presence.delete(code);
+  clearPlaybackUpdates(code);
   await prisma.room.deleteMany({ where: { code } });
 }
 
@@ -128,14 +130,18 @@ app.prepare().then(async () => {
       ) return;
       const code = String(roomId || "").toUpperCase();
       if (!socket.rooms.has(code)) return;
+      if (!isControl && playbackControllers.has(code) && playbackControllers.get(code) !== socket.id) return;
+      if (isControl) playbackControllers.set(code, socket.id);
+      const isLatest = latestPlaybackUpdate(code);
       withRoomLock(code, async () => {
-        if (!socket.rooms.has(code)) return;
+        if (!socket.rooms.has(code) || !isLatest()) return;
         if (isControl) playbackControllers.set(code, socket.id);
         else if (playbackControllers.has(code) && playbackControllers.get(code) !== socket.id) return;
         const updated = await prisma.room.update({
           where: { code },
           data: { isPlaying, currentTime },
         });
+        if (!isLatest()) return;
         io.to(code).emit("playback:update", {
           isPlaying: updated.isPlaying,
           currentTime: updated.currentTime,
